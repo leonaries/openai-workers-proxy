@@ -1,0 +1,24 @@
+{
+  "name": "openai-workers-proxy",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers proxy for OpenAI API with CORS support",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "wrangler dev --local"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "openai",
+    "api",
+    "proxy",
+    "cors"
+  ],
+  "author": "leonaries",
+  "license": "MIT"
+}
