@@ -1,7 +1,14 @@
 export default {
   async fetch(request, env, ctx) {
+    console.log('Incoming request:', {
+      method: request.method,
+      url: request.url,
+      headers: Object.fromEntries(request.headers.entries())
+    });
+
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
+      console.log('Handling CORS preflight request');
       return new Response(null, {
         status: 200,
         headers: {
@@ -15,21 +22,61 @@ export default {
 
     // 只允许 POST 请求
     if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { 
+      console.log('Method not allowed:', request.method);
+      return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { 
         status: 405,
         headers: {
+          'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
         }
       });
     }
 
     try {
+      // 检查环境变量
+      if (!env.OPENAI_API_KEY) {
+        console.error('OPENAI_API_KEY is not set');
+        return new Response(JSON.stringify({ 
+          error: 'Configuration Error',
+          message: 'OpenAI API key is not configured'
+        }), {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+
       // 获取请求体
-      const requestBody = await request.json();
+      let requestBody;
+      try {
+        const requestText = await request.text();
+        console.log('Request body text:', requestText);
+        requestBody = JSON.parse(requestText);
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError.message);
+        return new Response(JSON.stringify({ 
+          error: 'Invalid JSON',
+          message: 'Request body is not valid JSON'
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+
+      console.log('Parsed request body:', requestBody);
       
       // 验证必要的字段
       if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
-        return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
+        console.error('Invalid messages format:', requestBody.messages);
+        return new Response(JSON.stringify({ 
+          error: 'Invalid messages format',
+          message: 'messages field is required and must be an array'
+        }), {
           status: 400,
           headers: {
             'Content-Type': 'application/json',
@@ -48,6 +95,12 @@ export default {
         ...requestBody // 允许传递其他参数
       };
 
+      console.log('Sending request to OpenAI:', {
+        model: openaiRequestBody.model,
+        messagesCount: openaiRequestBody.messages.length,
+        stream: openaiRequestBody.stream
+      });
+
       // 调用 OpenAI API
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -58,8 +111,30 @@ export default {
         body: JSON.stringify(openaiRequestBody),
       });
 
+      console.log('OpenAI response status:', openaiResponse.status);
+      console.log('OpenAI response headers:', Object.fromEntries(openaiResponse.headers.entries()));
+
+      // 检查 OpenAI API 响应状态
+      if (!openaiResponse.ok) {
+        const errorText = await openaiResponse.text();
+        console.error('OpenAI API error:', errorText);
+        
+        return new Response(JSON.stringify({
+          error: 'OpenAI API Error',
+          message: `OpenAI API returned ${openaiResponse.status}: ${errorText}`,
+          status: openaiResponse.status
+        }), {
+          status: openaiResponse.status,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+
       // 处理流式响应
       if (requestBody.stream) {
+        console.log('Returning streaming response');
         return new Response(openaiResponse.body, {
           status: openaiResponse.status,
           headers: {
@@ -73,6 +148,11 @@ export default {
 
       // 处理普通响应
       const responseData = await openaiResponse.json();
+      console.log('OpenAI response data:', {
+        id: responseData.id,
+        model: responseData.model,
+        choices: responseData.choices?.length
+      });
       
       return new Response(JSON.stringify(responseData), {
         status: openaiResponse.status,
@@ -83,11 +163,16 @@ export default {
       });
 
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Unhandled error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       
       return new Response(JSON.stringify({ 
         error: 'Internal Server Error',
-        message: error.message 
+        message: error.message,
+        type: error.name
       }), {
         status: 500,
         headers: {
