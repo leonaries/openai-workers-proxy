@@ -6,6 +6,8 @@ export default {
       headers: Object.fromEntries(request.headers.entries())
     });
 
+    const url = new URL(request.url);
+
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
       console.log('Handling CORS preflight request');
@@ -18,6 +20,124 @@ export default {
           'Access-Control-Max-Age': '86400',
         },
       });
+    }
+
+    // GraphQL 路由处理
+    if (url.pathname === '/graphql') {
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          }
+        });
+      }
+
+      try {
+        const { query, variables, operationName } = await request.json();
+        console.log('GraphQL request:', { operationName, querySnippet: query?.slice(0, 80) });
+
+        const sendJson = (data, status = 200) => new Response(JSON.stringify({ data }), {
+          status,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+
+        const sendGraphQLError = (message, status = 400) => new Response(JSON.stringify({ errors: [{ message }] }), {
+          status,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+
+        const normalized = (query || '').replace(/\s+/g, ' ').toLowerCase();
+
+        // createSession
+        if (normalized.includes('mutation') && normalized.includes('createsession')) {
+          const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          return sendJson({ createSession: { sessionId, success: true } });
+        }
+
+        // chatHistory（示例返回空数组）
+        if (normalized.includes('query') && normalized.includes('chathistory')) {
+          return sendJson({ chatHistory: [] });
+        }
+
+        // sendMessage（回显用户消息，便于前端先乐观更新）
+        if (normalized.includes('mutation') && normalized.includes('sendmessage')) {
+          const input = variables?.input || {};
+          const content = input.content || '';
+          const message = {
+            id: `msg_${Date.now()}_user`,
+            content,
+            isUser: true,
+            timestamp: new Date().toISOString(),
+            success: true,
+            error: null
+          };
+          return sendJson({ sendMessage: message });
+        }
+
+        // getAIResponse（转发到 OpenAI 并返回 assistant 消息）
+        if (normalized.includes('mutation') && normalized.includes('getairesponse')) {
+          const resolvedApiKey = request.headers.get('x-openai-key') || env.OPENAI_API_KEY;
+          if (!resolvedApiKey) {
+            return sendGraphQLError('OpenAI API key is not configured', 500);
+          }
+
+          const input = variables?.input || {};
+          const openaiRequestBody = {
+            model: input.model || 'gpt-3.5-turbo',
+            messages: input.messages || [],
+            temperature: input.temperature ?? 0.7,
+            max_tokens: input.max_tokens ?? 1000,
+            stream: false,
+            ...input,
+          };
+
+          const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${resolvedApiKey}`,
+            },
+            body: JSON.stringify(openaiRequestBody),
+          });
+
+          if (!openaiResponse.ok) {
+            const errorText = await openaiResponse.text();
+            console.error('OpenAI API error (GraphQL):', errorText);
+            return sendGraphQLError(`OpenAI API returned ${openaiResponse.status}: ${errorText}`, openaiResponse.status);
+          }
+
+          const responseData = await openaiResponse.json();
+          const content = responseData.choices?.[0]?.message?.content || '';
+          const message = {
+            id: responseData.id || `msg_${Date.now()}_ai`,
+            content,
+            isUser: false,
+            timestamp: new Date().toISOString(),
+            success: true,
+            error: null,
+          };
+          return sendJson({ getAIResponse: message });
+        }
+
+        return sendGraphQLError('Unsupported GraphQL operation');
+      } catch (error) {
+        console.error('GraphQL handler error:', error);
+        return new Response(JSON.stringify({ errors: [{ message: error.message }] }), {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
     }
 
     // 只允许 POST 请求
@@ -33,8 +153,9 @@ export default {
     }
 
     try {
-      // 检查环境变量
-      if (!env.OPENAI_API_KEY) {
+      // 检查环境变量（允许通过请求头 x-openai-key 覆盖，便于本地联调）
+      const resolvedApiKey = request.headers.get('x-openai-key') || env.OPENAI_API_KEY;
+      if (!resolvedApiKey) {
         console.error('OPENAI_API_KEY is not set');
         return new Response(JSON.stringify({ 
           error: 'Configuration Error',
@@ -106,7 +227,7 @@ export default {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${resolvedApiKey}`,
         },
         body: JSON.stringify(openaiRequestBody),
       });
