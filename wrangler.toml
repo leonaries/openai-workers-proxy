@@ -9,3 +9,13 @@ compatibility_date = "2024-01-01"
 [env.development.vars]
 # 开发环境变量
 # OPENAI_API_KEY = "your-development-openai-api-key-here"
+
+# 本地开发配置
+[[env.development.kv_namespaces]]
+# binding = "MY_KV_NAMESPACE"
+# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# 支持本地 .env 文件
+[vars]
+# 这些变量将从 .env 文件或命令行读取
+# OPENAI_API_KEY = ""
