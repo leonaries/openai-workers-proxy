@@ -8,17 +8,20 @@ export default {
 
     const url = new URL(request.url);
 
-    // 处理 CORS 预检请求
+    // 统一的 CORS 响应头
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-openai-key',
+      'Access-Control-Max-Age': '86400',
+    };
+
+    // 处理 CORS 预检请求 - 对所有路径都返回正确的 CORS 头
     if (request.method === 'OPTIONS') {
-      console.log('Handling CORS preflight request');
+      console.log('Handling CORS preflight request for:', url.pathname);
       return new Response(null, {
         status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-openai-key',
-          'Access-Control-Max-Age': '86400',
-        },
+        headers: corsHeaders,
       });
     }
 
@@ -29,7 +32,7 @@ export default {
           status: 405,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           }
         });
       }
@@ -42,7 +45,7 @@ export default {
           status,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
 
@@ -50,7 +53,7 @@ export default {
           status,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
 
@@ -127,7 +130,6 @@ export default {
           return sendJson({ getAIResponse: message });
         }
 
-
         return sendGraphQLError('Unsupported GraphQL operation');
       } catch (error) {
         console.error('GraphQL handler error:', error);
@@ -135,12 +137,11 @@ export default {
           status: 500,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
     }
-
 
     // 只允许 POST 请求（REST API）
     if (request.method !== 'POST') {
@@ -149,7 +150,7 @@ export default {
         status: 405,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          ...corsHeaders
         }
       });
     }
@@ -166,7 +167,7 @@ export default {
           status: 500,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
@@ -186,7 +187,7 @@ export default {
           status: 400,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
@@ -203,7 +204,7 @@ export default {
           status: 400,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
@@ -250,7 +251,7 @@ export default {
           status: openaiResponse.status,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
@@ -264,7 +265,7 @@ export default {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
+            ...corsHeaders
           },
         });
       }
@@ -281,7 +282,7 @@ export default {
         status: openaiResponse.status,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          ...corsHeaders
         },
       });
 
@@ -300,10 +301,9 @@ export default {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          ...corsHeaders
         },
       });
     }
   },
 };
-
