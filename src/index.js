@@ -127,65 +127,6 @@ export default {
           return sendJson({ getAIResponse: message });
         }
 
-        // generateImage（新增图片生成 GraphQL mutation）
-        if (normalized.includes('mutation') && normalized.includes('generateimage')) {
-          const resolvedApiKey = request.headers.get('x-openai-key') || env.OPENAI_API_KEY;
-          if (!resolvedApiKey) {
-            return sendGraphQLError('OpenAI API key is not configured', 500);
-          }
-
-          const input = variables?.input || {};
-          
-          if (!input.prompt) {
-            return sendGraphQLError('prompt field is required for image generation');
-          }
-
-          const imageRequestBody = {
-            prompt: input.prompt,
-            model: input.model || 'dall-e-3',
-            n: input.n || 1,
-            size: input.size || '1024x1024',
-            quality: input.quality || 'standard',
-            style: input.style || 'vivid',
-            response_format: input.response_format || 'url'
-          };
-
-          console.log('Generating image via GraphQL:', {
-            prompt: imageRequestBody.prompt.substring(0, 100),
-            model: imageRequestBody.model,
-            size: imageRequestBody.size
-          });
-
-          const openaiResponse = await fetch('https://api.openai.com/v1/images/generations', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${resolvedApiKey}`,
-            },
-            body: JSON.stringify(imageRequestBody),
-          });
-
-          if (!openaiResponse.ok) {
-            const errorText = await openaiResponse.text();
-            console.error('OpenAI Image API error (GraphQL):', errorText);
-            return sendGraphQLError(`OpenAI Image API returned ${openaiResponse.status}: ${errorText}`, openaiResponse.status);
-          }
-
-          const responseData = await openaiResponse.json();
-          const result = {
-            id: `img_${Date.now()}`,
-            prompt: input.prompt,
-            images: responseData.data || [],
-            model: imageRequestBody.model,
-            size: imageRequestBody.size,
-            quality: imageRequestBody.quality,
-            style: imageRequestBody.style,
-            timestamp: new Date().toISOString(),
-            success: true,
-            error: null
-          };
-          return sendJson({ generateImage: result });
-        }
 
         return sendGraphQLError('Unsupported GraphQL operation');
       } catch (error) {
@@ -200,20 +141,6 @@ export default {
       }
     }
 
-    // 图片生成 REST API 路由
-    if (url.pathname === '/images/generations' || url.pathname === '/generate-image') {
-      if (request.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-          status: 405,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          }
-        });
-      }
-
-      return await handleImageGeneration(request, env);
-    }
 
     // 只允许 POST 请求（REST API）
     if (request.method !== 'POST') {
@@ -266,11 +193,6 @@ export default {
 
       console.log('Parsed request body:', requestBody);
 
-      // 检查是否是图片生成请求 (REST API)
-      if (requestBody.action === 'generate-image' || (requestBody.prompt && !requestBody.messages)) {
-        return await handleImageGenerationRest(requestBody, resolvedApiKey);
-      }
-      
       // 验证必要的字段（聊天请求）
       if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
         console.error('Invalid messages format:', requestBody.messages);
@@ -385,124 +307,3 @@ export default {
   },
 };
 
-// 处理图片生成请求（专用路由）
-async function handleImageGeneration(request, env) {
-  console.log('Handling image generation request via dedicated route');
-
-  const resolvedApiKey = request.headers.get('x-openai-key') || env.OPENAI_API_KEY;
-  if (!resolvedApiKey) {
-    return new Response(JSON.stringify({
-      error: 'Configuration Error',
-      message: 'OpenAI API key is not configured'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  }
-
-  let requestBody;
-  try {
-    const requestText = await request.text();
-    requestBody = JSON.parse(requestText);
-  } catch (parseError) {
-    return new Response(JSON.stringify({
-      error: 'Invalid JSON',
-      message: 'Request body is not valid JSON'
-    }), {
-      status: 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  }
-
-  return await handleImageGenerationRest(requestBody, resolvedApiKey);
-}
-
-// 处理图片生成的通用逻辑
-async function handleImageGenerationRest(requestBody, apiKey) {
-  if (!requestBody.prompt) {
-    return new Response(JSON.stringify({
-      error: 'Missing required field',
-      message: 'prompt field is required for image generation'
-    }), {
-      status: 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  }
-
-  const imageRequestBody = {
-    prompt: requestBody.prompt,
-    model: requestBody.model || 'dall-e-3',
-    n: requestBody.n || 1,
-    size: requestBody.size || '1024x1024',
-    quality: requestBody.quality || 'standard',
-    style: requestBody.style || 'vivid',
-    response_format: requestBody.response_format || 'url'
-  };
-
-  console.log('Generating image:', {
-    prompt: imageRequestBody.prompt.substring(0, 100),
-    model: imageRequestBody.model,
-    size: imageRequestBody.size
-  });
-
-  try {
-    const openaiResponse = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(imageRequestBody),
-    });
-
-    if (!openaiResponse.ok) {
-      const errorText = await openaiResponse.text();
-      console.error('OpenAI Image API error:', errorText);
-      
-      return new Response(JSON.stringify({
-        error: 'OpenAI Image API Error',
-        message: `OpenAI API returned ${openaiResponse.status}: ${errorText}`,
-        status: openaiResponse.status
-      }), {
-        status: openaiResponse.status,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
-    }
-
-    const responseData = await openaiResponse.json();
-    console.log('Image generation successful');
-
-    return new Response(JSON.stringify(responseData), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-
-  } catch (error) {
-    console.error('Image generation error:', error);
-    return new Response(JSON.stringify({
-      error: 'Image Generation Error',
-      message: error.message
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  }
-}
